@@ -1,2 +1,2 @@
-# ivry_udp_bridge
-A tracking driver for iVRy to use with OpenTrack (Or other UDP applications)
+# ivry_custom_tracking
+ Custom external tracking process example for iVRy Driver for SteamVR
