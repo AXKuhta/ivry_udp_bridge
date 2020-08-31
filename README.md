@@ -1,2 +1,10 @@
-# ivry_custom_tracking
- Custom external tracking process example for iVRy Driver for SteamVR
+# ivry_udp_bridge
+ An UDP interface for iVRy that supports OpenTrack.
+
+Place the .exe in \Steam\steamapps\common\iVRy\bin\win64, set the tracking to "Custom" in the iVRy settings, restart SteamVR and activate OpenTrack. It should kick in right away.
+
+Be sure to check that you are using the "UDP over network" output interface in OpenTrack, and that it was configured to send packets to 127.0.0.1 at port 8021.
+
+It gives you basic freedom to move around the room! Though you might want to disable the Y-axis in OpenTrack `default.ini` profile (Open it in notepad and edit `y-max-value=` to be `0`).
+
+[Releases](https://github.com/AXKuhta/ivry_udp_bridge/releases)
