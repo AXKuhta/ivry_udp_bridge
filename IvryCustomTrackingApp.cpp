@@ -82,7 +82,7 @@ DWORD IvryCustomTrackingApp::Run()
 	// Init our socket subsystem
 	WinsockInit();
 
-	// Create a TCP socket
+	// Create a UDP socket
 	udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
 	// Bind it (messy)
