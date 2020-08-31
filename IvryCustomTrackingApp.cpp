@@ -18,7 +18,42 @@
 *
 ***************************************************************************/
 
+#include <winsock2.h>
+#include <Ws2tcpip.h>
 #include "IvryCustomTrackingApp.h"
+
+// Socket prerequisites
+// ==========================================
+#pragma comment(lib, "Ws2_32.lib")
+
+int WinsockInit(void) {
+	WSADATA wsa_data;
+	return WSAStartup(MAKEWORD(1, 1), &wsa_data);
+}
+
+int WinsockQuit(void) {
+	return WSACleanup();
+}
+
+SOCKET udp_socket;
+
+int ReadAvail() {
+	int status;
+	u_long n = 0;
+
+	status = ioctlsocket(udp_socket, FIONREAD, &n);
+
+	if (status != 0)
+		return 0;
+
+	return (int)n;
+}
+// ==========================================
+
+// Global variables that will override the position
+double XPosOverride = 0;
+double YPosOverride = 1;
+double ZPosOverride = 0;
 
 IvryCustomTrackingApp::IvryCustomTrackingApp()
 	: m_hQuitEvent(INVALID_HANDLE_VALUE)
@@ -44,6 +79,40 @@ DWORD IvryCustomTrackingApp::Run()
 {
 	DWORD result = ERROR_SUCCESS;
 
+	// Init our socket subsystem
+	WinsockInit();
+
+	// Create a TCP socket
+	udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+	// Bind it (messy)
+	struct addrinfo addr;
+	struct addrinfo *addr_result;
+	
+	memset(&addr, 0, sizeof(addr));
+
+	addr.ai_family = AF_INET;
+	addr.ai_socktype = SOCK_DGRAM;
+	//addr.ai_protocol = 0;
+	addr.ai_flags = AI_PASSIVE;
+
+	getaddrinfo(NULL, "8021", &addr, &addr_result);
+
+	int status = bind(udp_socket, addr_result->ai_addr, (int)addr_result->ai_addrlen);
+
+	if (status == SOCKET_ERROR) {
+		LogMessage("Failed to bind to port 8021\n");
+	}
+
+	int length = 0;
+	double position_data[6] = { 0.0 };
+	// 0 - X
+	// 1 - Y
+	// 2 - Z
+	// 3 - Pitch?
+	// 4 - Yaw?
+	// 6 - Roll?
+
 	// Open connection to driver
 	if (Open())
 	{
@@ -61,8 +130,24 @@ DWORD IvryCustomTrackingApp::Run()
 			// Enable external tracking
 			TrackingEnabled(true);
 
-			// Wait for quit event
-			::WaitForSingleObject(m_hQuitEvent, INFINITE);
+			while (1) {
+				// Wait 10 ms for quit event on each iteration
+				if (::WaitForSingleObject(m_hQuitEvent, 10) != WAIT_TIMEOUT)
+					break;
+
+				// Loop to consume all available data in the socket
+				// We'll end up with the last and the most recent message
+				while (ReadAvail())
+					length = recv(udp_socket, (char *)&position_data[0], sizeof(double) * 6, 0);
+				
+
+				if (length == sizeof(double) * 6) {
+					// If the length checks out, apply the values
+					XPosOverride = position_data[0] / 10.0;
+					YPosOverride = position_data[1] / 10.0;
+					ZPosOverride = -(position_data[2] / 10.0);
+				}
+			}
 
 			// Disable external tracking
 			TrackingEnabled(false);
@@ -85,6 +170,9 @@ DWORD IvryCustomTrackingApp::Run()
 		result = this->GetLastError();
 	}
 
+	// Socket cleanup
+	WinsockQuit();
+
 	return result;
 }
 
@@ -100,30 +188,10 @@ void IvryCustomTrackingApp::OnDevicePoseUpdated(const vr::DriverPose_t &pose)
 		updatedPose.qRotation = { 1, 0, 0, 0 };
 	}
 
-	// Simulate position with arrow keys
-	// Shift and up/down arrow for height
-	bool shiftDown = (::GetAsyncKeyState(VK_LSHIFT) || ::GetAsyncKeyState(VK_RSHIFT));
-	if (::GetAsyncKeyState(VK_UP))
-	{
-		m_afPosition[shiftDown ? 1 : 2] += 0.001;
-	}
-	if (::GetAsyncKeyState(VK_DOWN))
-	{
-		m_afPosition[shiftDown ? 1 : 2] -= 0.001;
-	}
-	if (::GetAsyncKeyState(VK_LEFT))
-	{
-		m_afPosition[0] += 0.001;
-	}
-	if (::GetAsyncKeyState(VK_RIGHT))
-	{
-		m_afPosition[0] -= 0.001;
-	}
-
-	// Use tracker position
-	updatedPose.vecPosition[0] = m_afPosition[0];
-	updatedPose.vecPosition[1] = m_afPosition[1];
-	updatedPose.vecPosition[2] = m_afPosition[2];
+	// Use the overriden positions
+	updatedPose.vecPosition[0] = XPosOverride;
+	updatedPose.vecPosition[1] = YPosOverride;
+	updatedPose.vecPosition[2] = ZPosOverride;
 
 	// Send tracker pose to driver
 	PoseUpdated(updatedPose);
