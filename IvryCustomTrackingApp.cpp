@@ -55,6 +55,43 @@ double XPosOverride = 0;
 double YPosOverride = 1;
 double ZPosOverride = 0;
 
+// Axis multipliers
+double XMultiplier = 0.1;
+double YMultiplier = 0.1;
+double ZMultiplier = -0.1;
+
+// Port number
+int udp_port = 8021;
+
+// Config file handling
+// ==========================================
+void WriteDefaultConfig() {
+	FILE* cfg_file = fopen("udp_bridge_config.ini", "w");
+
+	// Quietly exit if write failed
+	if (!cfg_file)
+		return;
+
+	fprintf(cfg_file, "%d %lf %lf %lf", udp_port, XMultiplier, YMultiplier, ZMultiplier);
+
+	fclose(cfg_file);
+}
+
+void LoadConfigFile() {
+	FILE* cfg_file = fopen("udp_bridge_config.ini", "r");
+
+	// Attempt to create the config file if we couldn't open it
+	if (!cfg_file) {
+		WriteDefaultConfig();
+		return;
+	}
+
+	fscanf(cfg_file, "%d %lf %lf %lf", &udp_port, &XMultiplier, &YMultiplier, &ZMultiplier);
+
+	fclose(cfg_file);
+}
+// ==========================================
+
 IvryCustomTrackingApp::IvryCustomTrackingApp()
 	: m_hQuitEvent(INVALID_HANDLE_VALUE)
 	, m_bUseDeviceOrientation(true)
@@ -79,6 +116,9 @@ DWORD IvryCustomTrackingApp::Run()
 {
 	DWORD result = ERROR_SUCCESS;
 
+	// Attempt to load the config file
+	LoadConfigFile();
+
 	// Init our socket subsystem
 	WinsockInit();
 
@@ -96,12 +136,19 @@ DWORD IvryCustomTrackingApp::Run()
 	//addr.ai_protocol = 0;
 	addr.ai_flags = AI_PASSIVE;
 
-	getaddrinfo(NULL, "8021", &addr, &addr_result);
+	// We need to convert port int to port string
+	// Use snprintf() to do so
+	char port_string[8];
+	snprintf(&port_string[0], 8, "%d", udp_port);
+
+	getaddrinfo(NULL, &port_string[0], &addr, &addr_result);
 
 	int status = bind(udp_socket, addr_result->ai_addr, (int)addr_result->ai_addrlen);
 
 	if (status == SOCKET_ERROR) {
-		LogMessage("Failed to bind to port 8021\n");
+		LogMessage("UDP bridge: failed to bind to port ");
+		LogMessage(&port_string[0]);
+		LogMessage("\n");
 	}
 
 	int length = 0;
@@ -143,9 +190,9 @@ DWORD IvryCustomTrackingApp::Run()
 
 				if (length == sizeof(double) * 6) {
 					// If the length checks out, apply the values
-					XPosOverride = position_data[0] / 10.0;
-					YPosOverride = position_data[1] / 10.0;
-					ZPosOverride = -(position_data[2] / 10.0);
+					XPosOverride = position_data[0] * XMultiplier;
+					YPosOverride = position_data[1] * YMultiplier;
+					ZPosOverride = position_data[2] * ZMultiplier;
 				}
 			}
 
